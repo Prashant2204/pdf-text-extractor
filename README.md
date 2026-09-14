@@ -1,4 +1,4 @@
-# ContractHero PDF Text Extraction
+# PDF Text Extraction
 
 A small React, TypeScript and Vite app that extracts text from PDF files and displays it in the browser. Pages without usable embedded text are sent through an OCR fallback.
 
