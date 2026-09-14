@@ -1,75 +1,61 @@
-# React + TypeScript + Vite
+# ContractHero PDF Text Extraction
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+A small React, TypeScript and Vite application that extracts and displays embedded text from PDF files using `pdfjs-dist`.
 
-Currently, two official plugins are available:
+## Run locally
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
-
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-
+```sh
+npm install
+npm run dev
 ```
 
-You can also install [eslint-plugin-react-x](https://npmx.dev/package/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://npmx.dev/package/eslint-plugin-react-dom) for React-specific lint rules:
+## Other commands
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-
+```sh
+npm test
+npm run build
+npm run lint
 ```
+
+## Technical approach
+
+The PDF is processed directly in the browser because the requirement only needs text extraction and display.
+
+This keeps the implementation small and avoids backend infrastructure or transmitting the document to a server.
+
+React manages the upload, loading, error, and result states. PDF.js was chosen because it reads embedded PDF text in the browser. Documents are not uploaded or stored, and extracted content is rendered as plain text.
+
+## Behaviour
+
+- Select a PDF up to 25 MB.
+- Extracted text is displayed after processing.
+- Selecting another PDF replaces the previous result.
+- Invalid, damaged, or password-protected PDFs show a user-friendly error.
+- Mixed PDFs keep available text and warn about pages that may need OCR.
+
+## Limitations
+
+Scanned or image-only pages do not contain embedded text, so text inside them requires OCR. OCR is outside the scope of this implementation. A small helper flags pages with no embedded text and likely scanned pages when an image is present but selectable text appears only in the page margins.
+
+PNG and JPEG files are not accepted because this application processes PDFs only.
+
+Text follows PDF.js reading order, so complex tables and multi-column layouts may not preserve their original visual structure.
+
+## Testing
+
+Tests use Node's built-in test runner and the TypeScript compiler. PDF.js is mocked so the tests focus on our extraction logic.
+
+They cover:
+
+- valid multi-page PDF text returned in order
+- non-PDF input rejected
+- no extractable text handled
+- parser failure shown as a friendly error
+
+For a quick browser check, run:
+
+```sh
+npm run dev
+```
+
+Then try a normal text PDF, a multi-page PDF, a mixed PDF, a damaged PDF, and an image-only PDF.
