@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
-import { test } from 'node:test'
+import { test, beforeEach, afterEach } from 'node:test'
 import { SourceTextModule, SyntheticModule } from 'node:vm'
 import ts from 'typescript'
 
@@ -12,24 +12,32 @@ const { outputText } = ts.transpileModule(source, {
   compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
 })
 
-async function loadExtractor(getDocument = () => { throw new Error('Unexpected parser call') }) {
+async function loadExtractor(
+  getDocument = () => { throw new Error('Unexpected parser call') },
+  createWorker = () => { throw new Error('Unexpected OCR call') },
+) {
   
   // Load the service in isolation and replace PDF.js with a test double.
   const module = new SourceTextModule(outputText)
   await module.link((specifier) => specifier === 'pdfjs-dist'
     // Supply only the PDF.js exports used by the extraction service.
-    ? new SyntheticModule(['getDocument', 'GlobalWorkerOptions', 'OPS'], function () {
+    ? new SyntheticModule(['getDocument', 'GlobalWorkerOptions'], function () {
         this.setExport('getDocument', getDocument)
         this.setExport('GlobalWorkerOptions', {})
-        this.setExport('OPS', { paintImageXObject: 85, paintInlineImageXObject: 86 })
       })
+    : specifier === 'tesseract.js'
+      ? new SyntheticModule(['createWorker'], function () { this.setExport('createWorker', createWorker) })
     : new SyntheticModule(['default'], function () { this.setExport('default', 'worker.mjs') }))
   await module.evaluate()
   return module.namespace.extractPdfText
 }
 
-// Provide predictable page coordinates for scanned-page detection tests.
-const viewport = () => ({ height: 800, convertToViewportPoint: (x, y) => [x, 800 - y] })
+// Minimal viewport mock used when PDF.js renders pages for OCR.
+const viewport = ({ scale = 1 } = {}) => ({ width: 600 * scale, height: 800 * scale, convertToViewportPoint: (x, y) => [x, 800 - y] })
+
+// Browser canvas stand-in; PDF.js rendering and OCR are mocked in unit tests.
+beforeEach(() => { globalThis.document = { createElement: () => ({ width: 0, height: 0 }) } })
+afterEach(() => { delete globalThis.document })
 
 // Create a file-like object for tests; PDF.js itself is mocked.
 const pdfFile = () => new File(['PDF bytes'], 'contract.pdf', { type: 'application/pdf' })
@@ -73,9 +81,10 @@ test('returns empty text for a PDF without a text layer', async () => {
   const extract = await loadExtractor(() => ({
     promise: Promise.resolve({ numPages: 1, getPage: async () => ({
       getTextContent: async () => ({ items: [] }), cleanup() {},
+      getViewport: viewport, render: () => ({ promise: Promise.resolve() }),
     }) }),
     async destroy() {},
-  }))
+  }), async () => ({ recognize: async () => ({ data: { text: '' } }), terminate: async () => {} }))
   assert.deepEqual(await extract(pdfFile()), { text: '', pagesWithoutBodyText: [1] })
 })
 
@@ -88,4 +97,94 @@ test('hides parser details and destroys a failed loading task', async () => {
   }))
   await assert.rejects(extract(pdfFile()), { message: "We couldn't process this PDF. It may be damaged or password-protected." })
   assert.equal(destroyed, true)
+})
+
+// PURPOSE: OCR only pages without body text, preserving order with one worker.
+test('mixed PDF uses one OCR worker and keeps page order without duplicate headers', async () => {
+  const rendered = []
+  let workers = 0
+  let terminated = 0
+  let recognized = 0
+  const extract = await loadExtractor(() => ({
+    promise: Promise.resolve({ numPages: 4, getPage: async (number) => ({
+      getViewport: viewport,
+      getTextContent: async () => ({ items: number === 2 ? [] : [{
+        str: number === 3 ? 'Header' : `Page ${number}`,
+        hasEOL: true, transform: [1, 0, 0, 1, 20, number === 3 ? 780 : 400],
+      }] }),
+      render() {
+        rendered.push(number)
+        return { promise: Promise.resolve() }
+      },
+      cleanup() {},
+    }) }),
+    async destroy() {},
+  }), async () => {
+    workers++
+    return {
+      async recognize() { return { data: { text: ++recognized === 1 ? 'Scanned page 2' : 'Header\nScanned page 3' } } },
+      async terminate() { terminated++ },
+    }
+  })
+  assert.deepEqual(await extract(pdfFile()), {
+    text: 'Page 1\n\nScanned page 2\n\nHeader\nScanned page 3\n\nPage 4', pagesWithoutBodyText: [],
+  })
+  assert.deepEqual(rendered, [2, 3])
+  assert.equal(workers, 1)
+  assert.equal(terminated, 1)
+})
+
+// PURPOSE: Keep embedded text and release the worker when OCR fails.
+test('OCR failure returns a page warning and terminates the worker', async () => {
+  let terminated = false
+  let destroyed = false
+  const extract = await loadExtractor(() => ({
+    promise: Promise.resolve({ numPages: 1, getPage: async () => ({
+      getViewport: viewport,
+      getTextContent: async () => ({ items: [{ str: 'Header', transform: [1, 0, 0, 1, 20, 780] }] }),
+      render: () => ({ promise: Promise.resolve() }), cleanup() {},
+    }) }),
+    async destroy() { destroyed = true },
+  }), async () => ({
+    async recognize() { throw new Error('OCR unavailable') },
+    async terminate() { terminated = true },
+  }))
+  assert.deepEqual(await extract(pdfFile()), { text: 'Header', pagesWithoutBodyText: [1] })
+  assert.equal(terminated, true)
+  assert.equal(destroyed, true)
+})
+
+// PURPOSE: Cache startup failure per PDF, warn, and continue without retrying OCR.
+test('language download failure does not hang or retry on later pages', { timeout: 2000 }, async () => {
+  let attempts = 0
+  let destroyed = 0
+  const rendered = []
+  const extract = await loadExtractor(() => ({
+    promise: Promise.resolve({ numPages: 3, getPage: async (number) => ({
+      getViewport: viewport,
+      getTextContent: async () => ({ items: [{
+        str: number === 3 ? 'Body text' : `Header ${number}`,
+        transform: [1, 0, 0, 1, 20, number === 3 ? 400 : 780],
+      }] }),
+      render() { rendered.push(number); return { promise: Promise.resolve() } },
+      cleanup() {},
+    }) }),
+    async destroy() { destroyed++ },
+  }), (languages, engine, options) => {
+    attempts++
+    // Reproduce Tesseract's callback-only error while its promise stays pending.
+    queueMicrotask(() => options.errorHandler(new Error('Language download failed')))
+    return new Promise(() => {})
+  })
+
+  const expected = { text: 'Header 1\n\nHeader 2\n\nBody text', pagesWithoutBodyText: [1, 2] }
+  assert.deepEqual(await extract(pdfFile()), expected)
+  assert.equal(attempts, 1)
+  assert.equal(destroyed, 1)
+  assert.deepEqual(rendered, [])
+
+  // Selecting another PDF starts a new attempt, rather than caching forever.
+  assert.deepEqual(await extract(pdfFile()), expected)
+  assert.equal(attempts, 2)
+  assert.equal(destroyed, 2)
 })
