@@ -1,20 +1,41 @@
 main {
   max-width: 760px;
-  margin: 32px auto;
+  margin: 48px auto;
   padding: 0 16px;
+}
+
+h1 {
+  margin-bottom: 8px;
+  font-size: 32px;
+  line-height: 1.2;
+}
+
+.intro p,
+.file-hint {
+  color: #5b6d64;
 }
 
 .upload-panel,
 .output-panel {
   margin-top: 24px;
-  padding: 16px;
-  border: 1px solid #ccc;
+  padding: 20px;
+  border: 1px solid #d5dfd9;
+  border-radius: 8px;
+  background: white;
 }
 
 .file-label,
 .file-hint {
   display: block;
   margin: 8px 0;
+}
+
+.file-label {
+  font-weight: 600;
+}
+
+.file-hint {
+  font-size: 16px;
 }
 
 input {
@@ -27,7 +48,9 @@ pre {
   overflow-wrap: anywhere;
   max-height: 480px;
   overflow: auto;
-  font-size: 20px;
+  font-size: 16px;
+  margin: 0;
+  line-height: 1.7;
 }
 
 .error {
@@ -38,6 +61,7 @@ pre {
   padding: 12px;
   background: #fff4d6;
   color: #70551b;
+  border-radius: 6px;
 }
 
 input::file-selector-button {
@@ -53,4 +77,12 @@ input::file-selector-button {
 
 input::file-selector-button:hover {
   background: #dfece4;
+}
+
+input:disabled {
+  opacity: 0.6;
+}
+
+.status:not(:empty) {
+  margin-top: 16px;
 }
