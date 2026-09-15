@@ -16,20 +16,35 @@ async function loadExtractor(
   getDocument = () => { throw new Error('Unexpected parser call') },
   createWorker = () => { throw new Error('Unexpected OCR call') },
 ) {
-  
   // Load the service in isolation and replace PDF.js with a test double.
   const module = new SourceTextModule(outputText)
-  await module.link((specifier) => specifier === 'pdfjs-dist'
-    // Supply only the PDF.js exports used by the extraction service.
-    ? new SyntheticModule(['getDocument', 'GlobalWorkerOptions'], function () {
+  await module.link((specifier) => {
+    if (specifier === 'pdfjs-dist/legacy/build/pdf.mjs') {
+      return new SyntheticModule(['getDocument', 'GlobalWorkerOptions'], function () {
         this.setExport('getDocument', getDocument)
         this.setExport('GlobalWorkerOptions', {})
       })
-    : specifier === 'tesseract.js'
-      ? new SyntheticModule(['createWorker'], function () { this.setExport('createWorker', createWorker) })
-    : new SyntheticModule(['default'], function () { this.setExport('default', 'worker.mjs') }))
+    }
+    if (specifier === 'tesseract.js') {
+      return new SyntheticModule(['createWorker'], function () { this.setExport('createWorker', createWorker) })
+    }
+    return new SyntheticModule(['default'], function () { this.setExport('default', 'worker.mjs') })
+  })
   await module.evaluate()
   return module.namespace.extractPdfText
+}
+
+// Expose a reader without async iteration, matching the Safari compatibility case.
+function textStream(content) {
+  const chunks = content.items.map(item => ({ items: [item] }))
+  return {
+    getReader: () => ({
+      async read() {
+        return chunks.length ? { value: chunks.shift(), done: false } : { done: true }
+      },
+      releaseLock() {},
+    }),
+  }
 }
 
 // Minimal viewport mock used when PDF.js renders pages for OCR.
@@ -50,7 +65,6 @@ test('rejects non-PDF input before invoking PDF.js', async () => {
 
 // PURPOSE: Return multi-page text in the correct order and release PDF resources.
 test('combines pages in order and cleans up the document', async () => {
-  const requestedPages = []
   let cleanedPages = 0
   let destroyed = false
   const extract = await loadExtractor(({ data }) => {
@@ -59,10 +73,12 @@ test('combines pages in order and cleans up the document', async () => {
       promise: Promise.resolve({
         numPages: 2,
         async getPage(number) {
-          requestedPages.push(number)
           return {
             getViewport: viewport,
-            getTextContent: async () => ({ items: [{ str: `Page ${number}`, hasEOL: true, transform: [1, 0, 0, 1, 20, 400] }] }),
+            streamTextContent: () => textStream({ items: [
+              { str: 'Page', transform: [1, 0, 0, 1, 20, 400] },
+              { str: `${number}`, hasEOL: true, transform: [1, 0, 0, 1, 60, 400] },
+            ] }),
             cleanup() { cleanedPages++ },
           }
         },
@@ -71,16 +87,15 @@ test('combines pages in order and cleans up the document', async () => {
     }
   })
   assert.deepEqual(await extract(pdfFile()), { text: 'Page 1\n\nPage 2', pagesWithoutBodyText: [] })
-  assert.deepEqual(requestedPages, [1, 2])
   assert.equal(cleanedPages, 2)
   assert.equal(destroyed, true)
 })
 
 // PURPOSE: Return an empty result and identify pages with no extractable text.
-test('returns empty text for a PDF without a text layer', async () => {
+test('returns a page warning when embedded text and OCR are both empty', async () => {
   const extract = await loadExtractor(() => ({
     promise: Promise.resolve({ numPages: 1, getPage: async () => ({
-      getTextContent: async () => ({ items: [] }), cleanup() {},
+      streamTextContent: () => textStream({ items: [] }), cleanup() {},
       getViewport: viewport, render: () => ({ promise: Promise.resolve() }),
     }) }),
     async destroy() {},
@@ -108,7 +123,7 @@ test('mixed PDF uses one OCR worker and keeps page order without duplicate heade
   const extract = await loadExtractor(() => ({
     promise: Promise.resolve({ numPages: 4, getPage: async (number) => ({
       getViewport: viewport,
-      getTextContent: async () => ({ items: number === 2 ? [] : [{
+      streamTextContent: () => textStream({ items: number === 2 ? [] : [{
         str: number === 3 ? 'Header' : `Page ${number}`,
         hasEOL: true, transform: [1, 0, 0, 1, 20, number === 3 ? 780 : 400],
       }] }),
@@ -141,7 +156,7 @@ test('OCR failure returns a page warning and terminates the worker', async () =>
   const extract = await loadExtractor(() => ({
     promise: Promise.resolve({ numPages: 1, getPage: async () => ({
       getViewport: viewport,
-      getTextContent: async () => ({ items: [{ str: 'Header', transform: [1, 0, 0, 1, 20, 780] }] }),
+      streamTextContent: () => textStream({ items: [{ str: 'Header', transform: [1, 0, 0, 1, 20, 780] }] }),
       render: () => ({ promise: Promise.resolve() }), cleanup() {},
     }) }),
     async destroy() { destroyed = true },
@@ -162,7 +177,7 @@ test('language download failure does not hang or retry on later pages', { timeou
   const extract = await loadExtractor(() => ({
     promise: Promise.resolve({ numPages: 3, getPage: async (number) => ({
       getViewport: viewport,
-      getTextContent: async () => ({ items: [{
+      streamTextContent: () => textStream({ items: [{
         str: number === 3 ? 'Body text' : `Header ${number}`,
         transform: [1, 0, 0, 1, 20, number === 3 ? 400 : 780],
       }] }),

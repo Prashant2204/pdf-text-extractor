@@ -1,11 +1,12 @@
-import { getDocument, GlobalWorkerOptions, type PDFPageProxy } from 'pdfjs-dist'
+import { getDocument, GlobalWorkerOptions, type PDFPageProxy } from 'pdfjs-dist/legacy/build/pdf.mjs'
 import { createWorker, type Worker } from 'tesseract.js'
-import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
+import workerUrl from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url'
 import ocrWorkerUrl from 'tesseract.js/dist/worker.min.js?url'
 
 GlobalWorkerOptions.workerSrc = workerUrl
 
 export type ExtractionResult = { text: string; pagesWithoutBodyText: number[] }
+type TextItems = Awaited<ReturnType<PDFPageProxy['getTextContent']>>['items']
 
 export async function extractPdfText(file: File): Promise<ExtractionResult> {
   if (!/\.pdf$/i.test(file.name) || (file.type && file.type !== 'application/pdf')) {
@@ -25,15 +26,16 @@ export async function extractPdfText(file: File): Promise<ExtractionResult> {
     const pagesWithoutBodyText: number[] = []
     for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber++) {
       const page = await pdf.getPage(pageNumber)
-      const content = await page.getTextContent()
-      let text = content.items.map((item) => 'str' in item
+      const items = await readTextItems(page)
+      let text = items.map((item) => 'str' in item
         ? item.str + (item.hasEOL ? '\n' : ' ')
         : '').join('').trim()
-      if (!hasBodyText(page, content)) {
+      if (!hasBodyText(page, items)) {
         const canvas = document.createElement('canvas')
         try {
           // Cache the promise: a failed startup stays failed for this PDF.
-          ocrWorker = await (ocrStartup ??= startOcrWorker())
+          if (!ocrStartup) ocrStartup = startOcrWorker()
+          ocrWorker = await ocrStartup
           // Render only this page, at up to 2x resolution (capped at 4M pixels).
           const size = page.getViewport({ scale: 1 })
           const scale = Math.min(2, Math.sqrt(4_000_000 / (size.width * size.height)))
@@ -43,7 +45,8 @@ export async function extractPdfText(file: File): Promise<ExtractionResult> {
           await page.render({ canvas, viewport }).promise
           const { data } = await ocrWorker.recognize(canvas)
           // OCR includes headers/footers, so replace rather than duplicate them.
-          if (data.text.trim()) text = data.text.trim()
+          const ocrText = data.text.trim()
+          if (ocrText) text = ocrText
           else pagesWithoutBodyText.push(pageNumber)
         } catch {
           // Keep other pages and any embedded text if OCR is unavailable.
@@ -55,7 +58,7 @@ export async function extractPdfText(file: File): Promise<ExtractionResult> {
       pages.push(text)
       page.cleanup()
     }
-    return { text: pages.filter(Boolean).join('\n\n').trim(), pagesWithoutBodyText }
+    return { text: pages.filter(Boolean).join('\n\n'), pagesWithoutBodyText }
   } catch (error) {
     throw new Error("We couldn't process this PDF. It may be damaged or password-protected.", { cause: error })
   } finally {
@@ -77,13 +80,25 @@ function startOcrWorker(): Promise<Worker> {
   })
 }
 
+// Read text chunks explicitly for Safari compatibility.
+async function readTextItems(page: PDFPageProxy) {
+  const reader = page.streamTextContent().getReader()
+  const items: TextItems = []
+  try {
+    while (true) {
+      const { value, done } = await reader.read()
+      if (done) return items
+      items.push(...value.items)
+    }
+  } finally {
+    reader.releaseLock()
+  }
+}
+
 // A printed screenshot can have selectable headers/footers but an image-only body.
-function hasBodyText(
-  page: PDFPageProxy,
-  content: Awaited<ReturnType<PDFPageProxy['getTextContent']>>,
-): boolean {
+function hasBodyText(page: PDFPageProxy, items: TextItems): boolean {
   const viewport = page.getViewport({ scale: 1 })
-  return content.items.some((item) => {
+  return items.some((item) => {
     if (!('str' in item) || !item.str.trim()) return false
     const [, y] = viewport.convertToViewportPoint(item.transform[4], item.transform[5])
     // Ignore the top and bottom 5% when looking for body text.
