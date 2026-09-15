@@ -24,6 +24,10 @@ npm run lint
 - PDF.js extracts normal PDF text in the browser, so files are not sent to a backend.
 - Tesseract.js OCRs pages that do not contain meaningful embedded body text. It supports English and German.
 
+## Architecture
+
+I chose a client-side implementation because the requirements don't require persistence, sharing, authentication or server-side processing. This minimizes infrastructure and keeps the PDF on the user's device. If such requirements emerge, I would introduce a backend.
+
 ## Behaviour
 
 - Accepts PDF files up to 25 MB.
