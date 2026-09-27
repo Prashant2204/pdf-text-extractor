@@ -26,7 +26,7 @@ npm run lint
 
 ## Architecture
 
-I chose a client-side implementation because the requirements don't require persistence, sharing, authentication or server-side processing. This minimizes infrastructure and keeps the PDF on the user's device. If such requirements emerge, I would introduce a backend.
+PDF extraction runs entirely in the browser. This keeps the implementation lightweight and allows PDFs to remain on the user's device without being uploaded to an application server. A backend could be introduced later for features such as persistence, sharing, authentication or server-side processing.
 
 ## Behaviour
 
