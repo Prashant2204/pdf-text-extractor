@@ -1,0 +1,22 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.Prashant2204/pdf-text-extractor-mcp",
+  "title": "PDF Text Extractor MCP",
+  "description": "Extract local PDF text with page-level paragraphs and English/German OCR fallback.",
+  "repository": {
+    "url": "https://github.com/Prashant2204/pdf-text-extractor",
+    "source": "github",
+    "subfolder": "mcp"
+  },
+  "version": "0.1.1",
+  "packages": [
+    {
+      "registryType": "npm",
+      "identifier": "pdf-text-extractor-mcp",
+      "version": "0.1.1",
+      "transport": {
+        "type": "stdio"
+      }
+    }
+  ]
+}

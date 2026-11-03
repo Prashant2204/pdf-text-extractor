@@ -16,7 +16,7 @@ console.info = (...args: unknown[]) => console.error(...args)
 const { extractPdfText } = await import('./extract.js')
 
 const handle = serveStdio(() => {
-  const server = new McpServer({ name: 'pdf-text-extractor', version: '0.1.0' })
+  const server = new McpServer({ name: 'pdf-text-extractor-mcp', version: '0.1.1' })
   server.registerTool('extract_pdf_text', {
     description: 'Extract local PDF text (up to 25 MiB), with English/German OCR fallback, page-level paragraphs, methods, and warnings. Retains full-document text.',
     inputSchema: z.object({ file_path: z.string().min(1).describe('Absolute local path to a .pdf file') }),

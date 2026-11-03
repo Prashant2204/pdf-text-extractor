@@ -1,6 +1,6 @@
 {
-  "name": "prashant2204-pdf-text-extractor-mcp",
-  "version": "0.1.0",
+  "name": "pdf-text-extractor-mcp",
+  "version": "0.1.1",
   "description": "Local STDIO MCP PDF extraction with English/German OCR and page-level paragraphs",
   "type": "module",
   "license": "MIT",
@@ -41,5 +41,6 @@
     "@tesseract.js-data/eng": "1.0.0",
     "@types/node": "^24.13.3",
     "typescript": "~6.0.2"
-  }
+  },
+  "mcpName": "io.github.Prashant2204/pdf-text-extractor-mcp"
 }

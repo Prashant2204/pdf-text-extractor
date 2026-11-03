@@ -9,12 +9,12 @@ Requires Node.js **22.19 or newer** and npm (`node` and `npx` on PATH).
 
 ## Run the published package
 
-Version **0.1.0** is available on
-[npm](https://www.npmjs.com/package/prashant2204-pdf-text-extractor-mcp).
+Version **0.1.1** is available on
+[npm](https://www.npmjs.com/package/pdf-text-extractor-mcp).
 Launch it without cloning the repository or starting the React app:
 
 ```sh
-npx -y prashant2204-pdf-text-extractor-mcp@0.1.0
+npx -y pdf-text-extractor-mcp@0.1.1
 ```
 
 The process waits for an MCP client on stdin. There is no interactive prompt.
@@ -31,7 +31,7 @@ and enable the tool in agent chat:
     "pdf-text-extractor": {
       "type": "stdio",
       "command": "npx",
-      "args": ["-y", "prashant2204-pdf-text-extractor-mcp@0.1.0"]
+      "args": ["-y", "pdf-text-extractor-mcp@0.1.1"]
     }
   }
 }
@@ -159,14 +159,14 @@ the tarball; runtime consumers need no shared source files from the repository.
 Test the published package without cloning or building:
 
 ```sh
-npx -y @modelcontextprotocol/inspector@2.13.0 --cli npx -y prashant2204-pdf-text-extractor-mcp@0.1.0 --method tools/list
-npx -y @modelcontextprotocol/inspector@2.13.0 --cli npx -y prashant2204-pdf-text-extractor-mcp@0.1.0 --method tools/call --tool-name extract_pdf_text --tool-arg "file_path=/absolute/path/to/contract.pdf"
+npx -y @modelcontextprotocol/inspector@2.13.0 --cli npx -y pdf-text-extractor-mcp@0.1.1 --method tools/list
+npx -y @modelcontextprotocol/inspector@2.13.0 --cli npx -y pdf-text-extractor-mcp@0.1.1 --method tools/call --tool-name extract_pdf_text --tool-arg "file_path=/absolute/path/to/contract.pdf"
 ```
 
 For the browser Inspector:
 
 ```sh
-npx -y @modelcontextprotocol/inspector@2.13.0 npx -y prashant2204-pdf-text-extractor-mcp@0.1.0
+npx -y @modelcontextprotocol/inspector@2.13.0 npx -y pdf-text-extractor-mcp@0.1.1
 ```
 
 Click Connect, open Tools, and invoke `extract_pdf_text` with a local PDF path.
@@ -187,7 +187,7 @@ cd mcp
 npm pack
 ```
 
-Inspect the tarball with `tar -tzf prashant2204-pdf-text-extractor-mcp-0.1.0.tgz`.
+Inspect the tarball with `tar -tzf pdf-text-extractor-mcp-0.1.1.tgz`.
 It contains compiled JavaScript (including the OCR worker), both compressed
 language models, third-party notices, this README and package metadata. Install it in
 a separate directory to verify the executable without the source checkout:
@@ -195,7 +195,7 @@ a separate directory to verify the executable without the source checkout:
 ```sh
 mkdir /tmp/pdf-mcp-install
 cd /tmp/pdf-mcp-install
-npm install /absolute/path/to/mcp/prashant2204-pdf-text-extractor-mcp-0.1.0.tgz
+npm install /absolute/path/to/mcp/pdf-text-extractor-mcp-0.1.1.tgz
 ./node_modules/.bin/pdf-text-extractor-mcp
 ```
 
@@ -207,7 +207,7 @@ MCP_TEST_CLI=/tmp/pdf-mcp-install/node_modules/.bin/pdf-text-extractor-mcp npm t
 
 ## Publish a new version
 
-Version 0.1.0 is already published. Published versions cannot be overwritten;
+Published versions cannot be overwritten;
 increment the version for the next release and update pinned version examples
 in both READMEs.
 Project code is licensed under MIT; the package includes `LICENSE` with
@@ -230,6 +230,30 @@ Publishing requires access to the maintainer's npm account with 2FA enabled;
 complete any browser approval prompted by npm. Commit the version, lockfile and
 documentation changes for the release. The build and tests do not publish
 automatically. Publish from `mcp/`, since the root React package remains private.
+
+## Publish to the MCP Registry
+
+The registry identifier is `io.github.Prashant2204/pdf-text-extractor-mcp`.
+The `mcpName` in `package.json` must match `name` in `server.json`. Keep the
+package version, server version, and npm package version in `server.json` aligned.
+Publish the npm package first so the registry can verify its metadata.
+
+Install the official publisher with `brew install mcp-publisher`, then from `mcp/`:
+
+```sh
+mcp-publisher validate
+mcp-publisher login github
+mcp-publisher publish
+```
+
+Complete GitHub device authorization as prompted. Verify the published entry with:
+
+```sh
+curl "https://registry.modelcontextprotocol.io/v0.1/servers?search=io.github.Prashant2204/pdf-text-extractor-mcp"
+```
+
+The registry lists metadata; npm distributes the local STDIO server.
+See the [official publishing guide](https://github.com/modelcontextprotocol/registry/blob/main/docs/modelcontextprotocol-io/quickstart.mdx).
 
 The integration test runs real English/German OCR on generated image-only PDF
 pages, mixed header/scan pages, blank pages, and embedded-text pages through STDIO.

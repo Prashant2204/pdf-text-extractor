@@ -1,6 +1,14 @@
-# PDF Text Extraction
+# PDF Text Extractor
 
-A small React, TypeScript and Vite app that extracts text from PDF files and displays it in the browser. Pages without usable embedded text are sent through an OCR fallback.
+Extract PDF text through a browser application or a local MCP server for AI agents.
+Both share an extraction core with English/German OCR fallback for scanned pages.
+The MCP server returns full-document text, page-level paragraphs, extraction
+methods, and warnings, with basic table readability.
+
+Upload a PDF to the React application to view its text in the browser, or connect
+an MCP client such as VS Code to the published
+[`pdf-text-extractor-mcp`](https://www.npmjs.com/package/pdf-text-extractor-mcp)
+package. PDF extraction runs locally in either environment.
 
 ## Run locally
 
@@ -26,18 +34,18 @@ The separate [`mcp/` package](mcp/README.md) exposes one local STDIO tool,
 It requires **Node.js 22.19+** and npm. The React app does not need to be running.
 Both OCR language models are packaged locally; extraction does not download models.
 
-The package is published on [npm](https://www.npmjs.com/package/prashant2204-pdf-text-extractor-mcp).
-Launch version **0.1.0** without cloning this repository:
+The package is published on [npm](https://www.npmjs.com/package/pdf-text-extractor-mcp).
+Launch version **0.1.1** without cloning this repository:
 
 ```sh
-npx -y prashant2204-pdf-text-extractor-mcp@0.1.0
+npx -y pdf-text-extractor-mcp@0.1.1
 ```
 
 The process waits for an MCP client on stdin. To test it interactively with the
 official MCP Inspector:
 
 ```sh
-npx -y @modelcontextprotocol/inspector@2.13.0 npx -y prashant2204-pdf-text-extractor-mcp@0.1.0
+npx -y @modelcontextprotocol/inspector@2.13.0 npx -y pdf-text-extractor-mcp@0.1.1
 ```
 
 Click **Connect**, open **Tools**, select `extract_pdf_text`, and enter the absolute
@@ -51,7 +59,7 @@ For VS Code, add this to `.vscode/mcp.json`:
     "pdf-text-extractor": {
       "type": "stdio",
       "command": "npx",
-      "args": ["-y", "prashant2204-pdf-text-extractor-mcp@0.1.0"]
+      "args": ["-y", "pdf-text-extractor-mcp@0.1.1"]
     }
   }
 }
@@ -62,6 +70,17 @@ The client launches the process and discovers `extract_pdf_text`. Provide
 machine. Results include full-document text and page-level paragraphs, extraction
 methods and warnings. OCR supports English and German; complex layouts and OCR
 accuracy are not guaranteed.
+
+### Example: use with an AI agent
+
+After connecting the server and enabling `extract_pdf_text`, ask your agent:
+
+> Use `extract_pdf_text` to read `/absolute/path/to/contract.pdf`, then summarize
+> its important clauses. Include page references and mention extraction warnings.
+
+The tool supplies the extracted text; the agent creates the summary. The MCP
+server itself does not use an LLM. Text returned to the agent follows your MCP
+client and model provider's data handling settings.
 
 See the [MCP package README](mcp/README.md) for the complete result contract,
 Inspector CLI instructions, package verification and future releases.
