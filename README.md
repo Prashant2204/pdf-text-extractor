@@ -35,6 +35,10 @@ It requires **Node.js 22.19+** and npm. The React app does not need to be runnin
 Both OCR language models are packaged locally; extraction does not download models.
 
 The package is published on [npm](https://www.npmjs.com/package/pdf-text-extractor-mcp).
+It is also listed in the [official MCP Registry](https://registry.modelcontextprotocol.io/v0.1/servers/io.github.Prashant2204%2Fpdf-text-extractor-mcp/versions/0.1.1)
+as `io.github.Prashant2204/pdf-text-extractor-mcp`. The registry link shows the
+published metadata for version **0.1.1**.
+
 Launch version **0.1.1** without cloning this repository:
 
 ```sh
