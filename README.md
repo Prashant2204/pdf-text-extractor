@@ -4,8 +4,10 @@ A small React, TypeScript and Vite app that extracts text from PDF files and dis
 
 ## Run locally
 
+Requires Node.js 22.19+ and npm.
+
 ```sh
-npm install
+npm ci
 npm run dev
 ```
 
@@ -17,29 +19,98 @@ npm run build
 npm run lint
 ```
 
-## Technical choices
+## Using PDF Text Extractor as an MCP Server
 
-- React manages the upload, loading, error and result states.
-- Vite provides the development server and production build.
-- PDF.js extracts normal PDF text in the browser, so files are not sent to a backend.
-- Tesseract.js OCRs pages that do not contain meaningful embedded body text. It supports English and German.
+The separate [`mcp/` package](mcp/README.md) exposes one local STDIO tool,
+`extract_pdf_text`, with embedded PDF text and English/German OCR fallback.
+It requires **Node.js 22.19+** and npm. The React app does not need to be running.
+Both OCR language models are packaged locally; extraction does not download models.
+
+The package is published on [npm](https://www.npmjs.com/package/prashant2204-pdf-text-extractor-mcp).
+Launch version **0.1.0** without cloning this repository:
+
+```sh
+npx -y prashant2204-pdf-text-extractor-mcp@0.1.0
+```
+
+The process waits for an MCP client on stdin. To test it interactively with the
+official MCP Inspector:
+
+```sh
+npx -y @modelcontextprotocol/inspector@2.13.0 npx -y prashant2204-pdf-text-extractor-mcp@0.1.0
+```
+
+Click **Connect**, open **Tools**, select `extract_pdf_text`, and enter the absolute
+path to a PDF on your computer.
+
+For VS Code, add this to `.vscode/mcp.json`:
+
+```json
+{
+  "servers": {
+    "pdf-text-extractor": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "prashant2204-pdf-text-extractor-mcp@0.1.0"]
+    }
+  }
+}
+```
+
+The client launches the process and discovers `extract_pdf_text`. Provide
+`{ "file_path": "/absolute/path/to/example.pdf" }` using a path on the server's
+machine. Results include full-document text and page-level paragraphs, extraction
+methods and warnings. OCR supports English and German; complex layouts and OCR
+accuracy are not guaranteed.
+
+See the [MCP package README](mcp/README.md) for the complete result contract,
+Inspector CLI instructions, package verification and future releases.
+
+To develop the MCP server from this repository:
+
+```sh
+npm ci --prefix mcp
+npm run build --prefix mcp
+node mcp/dist/index.js
+```
+
+For a local development build in VS Code, use `"command": "node"` and
+`"args": ["/absolute/path/to/pdf-text-extractor/mcp/dist/index.js"]`.
 
 ## Architecture
 
-PDF extraction runs entirely in the browser. This keeps the implementation lightweight and allows PDFs to remain on the user's device without being uploaded to an application server. A backend could be introduced later for features such as persistence, sharing, authentication or server-side processing.
+The browser app and Node MCP server share the extraction core in
+`mcp/src/shared/`. It handles page iteration, embedded-text reading, scan detection,
+OCR fallback, paragraphs, basic table spacing, warnings, and document text assembly.
+The shared code imports no browser, Node, PDF.js, or Tesseract runtime modules.
 
-## Behaviour
+The browser service reads uploaded files and supplies browser canvas/OCR workers.
+The MCP wrapper validates local paths and supplies Node canvas/workers and bundled
+models. Rendering limits and model delivery remain specific to each environment.
+Both run locally without uploading PDFs to an application server.
 
-- Accepts PDF files up to 25 MB.
-- Keeps text from all pages in their original order.
-- Mixed PDFs combine PDF.js text and OCR text.
-- Failed OCR is non-blocking: available text is shown and affected pages are listed in a warning.
-- Invalid, damaged or password-protected PDFs show a readable error.
+The React service keeps its existing `{ text, pagesWithoutBodyText }` interface;
+the MCP tool keeps its existing page-level JSON contract. Shared modules compile
+into the MCP tarball, so installing the CLI still needs no repository checkout.
 
 ## Testing
 
-The Node test runner checks multi-page ordering, invalid input, empty text, parser errors, OCR fallback, worker reuse and OCR startup failure. PDF.js and Tesseract.js are mocked so the tests focus on application logic.
+`npm test` checks the browser adapter's multi-page ordering, invalid input, empty
+text, parser errors, OCR fallback, worker reuse and OCR startup failure. Most tests
+mock PDF.js/Tesseract; a real PDF.js fixture also checks reading order and table
+spacing. The same PDF fixture is checked through the MCP tool to verify both
+wrappers use the same formatting rules.
+
+`npm test --prefix mcp` checks the shared formatter, real English/German OCR
+through STDIO, file errors, and partial results when OCR models are unavailable.
 
 ## Limitations
 
-OCR can be slow or inaccurate on poor-quality scans. Pages that contain some embedded body text alongside an image may not trigger OCR. Complex tables and multi-column layouts may not preserve their visual structure. PNG and JPEG files are not accepted directly.
+Files are limited to 25 MiB. OCR can be slow or inaccurate on poor-quality scans. Pages that contain some embedded body text alongside an image may not trigger OCR. Complex tables and multi-column layouts may not preserve their visual structure. PNG and JPEG files are not accepted directly.
+
+## License
+
+Project code is licensed under the [MIT License](LICENSE), copyright © 2026
+Prashant Bhatia. Third-party dependencies retain their own licenses. Bundled
+OCR model attribution and the Apache-2.0 license are preserved in the MCP
+package's [third-party notices](mcp/THIRD_PARTY_NOTICES.md).

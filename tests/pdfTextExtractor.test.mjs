@@ -3,30 +3,55 @@ import { readFile } from 'node:fs/promises'
 import { test, beforeEach, afterEach } from 'node:test'
 import { SourceTextModule, SyntheticModule } from 'node:vm'
 import ts from 'typescript'
+import { makeLayoutPdf } from '../mcp/tests/fixture.mjs'
 
-// Read the real extraction service used by the application.
-const source = await readFile(new URL('../src/services/pdfTextExtractor.ts', import.meta.url), 'utf8')
-
-// Convert TypeScript to JavaScript so Node can execute it in the tests.
-const { outputText } = ts.transpileModule(source, {
-  compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
-})
+async function sourceModule(url) {
+  const source = await readFile(url, 'utf8')
+  const { outputText } = ts.transpileModule(source, {
+    compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
+  })
+  return new SourceTextModule(outputText, { identifier: url.href })
+}
 
 async function loadExtractor(
   getDocument = () => { throw new Error('Unexpected parser call') },
   createWorker = () => { throw new Error('Unexpected OCR call') },
 ) {
-  // Load the service in isolation and replace PDF.js with a test double.
-  const module = new SourceTextModule(outputText)
-  await module.link((specifier) => {
+  const module = await sourceModule(new URL('../src/services/pdfTextExtractor.ts', import.meta.url))
+  const modules = new Map()
+  await module.link(async (specifier, parent) => {
+    if (specifier.startsWith('.')) {
+      const url = new URL(specifier.replace(/\.js$/, '.ts'), parent.identifier)
+      if (!modules.has(url.href)) modules.set(url.href, await sourceModule(url))
+      return modules.get(url.href)
+    }
     if (specifier === 'pdfjs-dist/legacy/build/pdf.mjs') {
-      return new SyntheticModule(['getDocument', 'GlobalWorkerOptions'], function () {
-        this.setExport('getDocument', getDocument)
+      return new SyntheticModule(['getDocument', 'GlobalWorkerOptions', 'OPS'], function () {
+        this.setExport('getDocument', options => {
+          const task = getDocument(options)
+          return { ...task, destroy: () => task.destroy(), promise: task.promise.then(pdf => ({
+            numPages: pdf.numPages,
+            async getPage(number) {
+              const page = await pdf.getPage(number)
+              // Existing mocks represent text-only pages unless specified otherwise.
+              page.getOperatorList ??= async () => ({ fnArray: [] })
+              return page
+            },
+          })) }
+        })
         this.setExport('GlobalWorkerOptions', {})
+        this.setExport('OPS', { paintImageXObject: 85, paintInlineImageXObject: 86 })
       })
     }
     if (specifier === 'tesseract.js') {
-      return new SyntheticModule(['createWorker'], function () { this.setExport('createWorker', createWorker) })
+      return new SyntheticModule(['createWorker', 'PSM'], function () {
+        this.setExport('createWorker', async (...args) => {
+          const worker = await createWorker(...args)
+          worker.setParameters ??= async () => ({})
+          return worker
+        })
+        this.setExport('PSM', { AUTO: '3' })
+      })
     }
     return new SyntheticModule(['default'], function () { this.setExport('default', 'worker.mjs') })
   })
@@ -36,7 +61,7 @@ async function loadExtractor(
 
 // Expose a reader without async iteration, matching the Safari compatibility case.
 function textStream(content) {
-  const chunks = content.items.map(item => ({ items: [item] }))
+  const chunks = content.items.map(item => ({ items: [{ width: item.str?.length * 6, ...item }] }))
   return {
     getReader: () => ({
       async read() {
@@ -76,8 +101,8 @@ test('combines pages in order and cleans up the document', async () => {
           return {
             getViewport: viewport,
             streamTextContent: () => textStream({ items: [
-              { str: 'Page', transform: [1, 0, 0, 1, 20, 400] },
-              { str: `${number}`, hasEOL: true, transform: [1, 0, 0, 1, 60, 400] },
+              { str: 'Page', transform: [12, 0, 0, 12, 20, 400] },
+              { str: `${number}`, hasEOL: true, transform: [12, 0, 0, 12, 60, 400] },
             ] }),
             cleanup() { cleanedPages++ },
           }
@@ -125,7 +150,7 @@ test('mixed PDF uses one OCR worker and keeps page order without duplicate heade
       getViewport: viewport,
       streamTextContent: () => textStream({ items: number === 2 ? [] : [{
         str: number === 3 ? 'Header' : `Page ${number}`,
-        hasEOL: true, transform: [1, 0, 0, 1, 20, number === 3 ? 780 : 400],
+        hasEOL: true, transform: [12, 0, 0, 12, 20, number === 3 ? 780 : 400],
       }] }),
       render() {
         rendered.push(number)
@@ -156,7 +181,7 @@ test('OCR failure returns a page warning and terminates the worker', async () =>
   const extract = await loadExtractor(() => ({
     promise: Promise.resolve({ numPages: 1, getPage: async () => ({
       getViewport: viewport,
-      streamTextContent: () => textStream({ items: [{ str: 'Header', transform: [1, 0, 0, 1, 20, 780] }] }),
+      streamTextContent: () => textStream({ items: [{ str: 'Header', transform: [12, 0, 0, 12, 20, 780] }] }),
       render: () => ({ promise: Promise.resolve() }), cleanup() {},
     }) }),
     async destroy() { destroyed = true },
@@ -179,7 +204,7 @@ test('language download failure does not hang or retry on later pages', { timeou
       getViewport: viewport,
       streamTextContent: () => textStream({ items: [{
         str: number === 3 ? 'Body text' : `Header ${number}`,
-        transform: [1, 0, 0, 1, 20, number === 3 ? 400 : 780],
+        transform: [12, 0, 0, 12, 20, number === 3 ? 400 : 780],
       }] }),
       render() { rendered.push(number); return { promise: Promise.resolve() } },
       cleanup() {},
@@ -202,4 +227,38 @@ test('language download failure does not hang or retry on later pages', { timeou
   assert.deepEqual(await extract(pdfFile()), expected)
   assert.equal(attempts, 2)
   assert.equal(destroyed, 2)
+})
+
+test('browser adapter formats a real PDF with the shared reading-order and table rules', async () => {
+  const { getDocument } = await import('pdfjs-dist/legacy/build/pdf.mjs')
+  const extract = await loadExtractor(options => getDocument({ ...options, useSystemFonts: true }))
+  const result = await extract(new File([makeLayoutPdf()], 'layout.pdf', { type: 'application/pdf' }))
+  assert.deepEqual(result, { text: 'Item | Amount\n\nApples | 10 EUR', pagesWithoutBodyText: [] })
+})
+
+test('sparse embedded body text over an image triggers shared OCR fallback', async () => {
+  let parameters
+  let outputs
+  const extract = await loadExtractor(() => ({
+    promise: Promise.resolve({ numPages: 1, getPage: async () => ({
+      getViewport: viewport,
+      streamTextContent: () => textStream({ items: [{ str: 'Label', transform: [12, 0, 0, 12, 20, 400] }] }),
+      getOperatorList: async () => ({ fnArray: [85] }),
+      render: () => ({ promise: Promise.resolve() }), cleanup() {},
+    }) }),
+    async destroy() {},
+  }), async () => ({
+    async setParameters(value) { parameters = value },
+    async recognize(canvas, options, output) {
+      outputs = output
+      return { data: { text: 'fallback', blocks: [{ paragraphs: [{ lines: [{ words: [
+        { text: 'OCR', bbox: { x0: 20, y0: 20, x1: 45, y1: 32 } },
+        { text: 'table', bbox: { x0: 200, y0: 20, x1: 240, y1: 32 } },
+      ] }] }] }] } }
+    },
+    async terminate() {},
+  }))
+  assert.deepEqual(await extract(pdfFile()), { text: 'OCR | table', pagesWithoutBodyText: [] })
+  assert.deepEqual(parameters, { tessedit_pageseg_mode: '3', preserve_interword_spaces: '1' })
+  assert.deepEqual(outputs, { text: true, blocks: true })
 })

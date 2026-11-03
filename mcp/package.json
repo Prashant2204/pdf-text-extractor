@@ -1,0 +1,45 @@
+{
+  "name": "prashant2204-pdf-text-extractor-mcp",
+  "version": "0.1.0",
+  "description": "Local STDIO MCP PDF extraction with English/German OCR and page-level paragraphs",
+  "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Prashant2204/pdf-text-extractor.git",
+    "directory": "mcp"
+  },
+  "bin": {
+    "pdf-text-extractor-mcp": "dist/index.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "THIRD_PARTY_NOTICES.md",
+    "licenses"
+  ],
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "start": "node dist/index.js",
+    "test": "npm run build && node --test tests/*.test.mjs",
+    "prepack": "npm run build"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/server": "2.4.0",
+    "@napi-rs/canvas": "1.1.0",
+    "pdfjs-dist": "6.5.438",
+    "tesseract.js": "7.0.0",
+    "zod": "^4.0.0"
+  },
+  "devDependencies": {
+    "@modelcontextprotocol/client": "2.4.0",
+    "@tesseract.js-data/deu": "1.0.0",
+    "@tesseract.js-data/eng": "1.0.0",
+    "@types/node": "^24.13.3",
+    "typescript": "~6.0.2"
+  }
+}
